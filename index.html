@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard IoT ESP32</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--tx:#1e293b;--tx2:#64748b;--bd:#e2e8f0;--t:#ef4444;--h:#3b82f6}
+@media(prefers-color-scheme:dark){:root{--bg:#0f172a;--card:#1e293b;--tx:#f1f5f9;--tx2:#94a3b8;--bd:#334155}}
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Roboto,Arial,sans-serif}
+body{background:var(--bg);color:var(--tx);padding:16px}
+.wrap{max-width:1100px;margin:0 auto;display:grid;gap:16px}
+.card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+h1{font-size:1.3rem}h2{font-size:1rem;margin-bottom:12px}
+.sub{font-size:.8rem;color:var(--tx2)}
+.badge{font-size:.8rem;padding:6px 12px;border-radius:20px;background:#e0f2fe;color:#0369a1;font-weight:600}
+.ctrl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+select,button{padding:6px 10px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx);cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.stat{border-top:4px solid var(--t)}.stat.h{border-top-color:var(--h)}.stat.r{border-top-color:#8b5cf6}.stat.g{border-top-color:#22c55e}.stat.y{border-top-color:#eab308}
+.stat h3{font-size:.7rem;text-transform:uppercase;color:var(--tx2);margin-bottom:6px}
+.stat .v{font-size:1.5rem;font-weight:700}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.cv{position:relative;height:300px}
+.cv.big{height:340px}
+.flow{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:.8rem;text-align:center}
+.node{border:2px solid var(--bd);border-radius:10px;padding:10px 12px;min-width:120px}
+.node b{display:block;margin-bottom:2px}
+.arrow{color:var(--tx2);font-weight:700}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th,td{padding:6px 8px;border-bottom:1px solid var(--bd);text-align:left}
+.tw{max-height:320px;overflow:auto}
+.hide{display:none!important}
+th[data-k]{cursor:pointer}th[data-k]:hover{color:var(--h)}
+tbody tr{cursor:pointer}tr.sel{background:rgba(59,130,246,.18)}
+.drawer{position:fixed;top:0;right:0;width:320px;max-width:90vw;height:100%;background:var(--card);box-shadow:-4px 0 16px rgba(0,0,0,.2);transform:translateX(105%);transition:transform .25s;overflow:auto;padding:18px;z-index:10}
+.drawer.open{transform:none}
+.drawer fieldset{border:1px solid var(--bd);border-radius:10px;padding:8px 12px;margin:12px 0}
+.drawer legend{font-size:.75rem;color:var(--tx2);padding:0 6px;text-transform:uppercase}
+.drawer label{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:6px 0;font-size:.85rem}
+.drawer input[type=number]{width:64px}.drawer input,.drawer select{padding:4px 6px;border-radius:6px;border:1px solid var(--bd);background:var(--card);color:var(--tx)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="card">
+  <div><h1>Monitoring &amp; Statistika Sensor IoT</h1><p class="sub">ESP32 → Google Sheets → Dashboard (Netlify)</p></div>
+  <div class="ctrl">
+    <label class="sub">Data terakhir:</label>
+    <select id="n"><option>20</option><option selected>50</option><option>100</option><option>200</option></select>
+    <button id="menuBtn">⚙ Menu Dasbor</button><button id="pause">⏸ Jeda</button><button id="csv">Unduh CSV (sesuai filter)</button>
+    <span class="badge" id="live" style="background:#e2e8f0;color:#475569">Live: belum diatur</span><span class="badge" id="st">Menghubungkan...</span>
+  </div>
+</header>
+
+<div class="grid" id="w-stat">
+  <div class="card stat"><h3>Suhu rata-rata</h3><div class="v" id="mT">--</div><div class="sub" id="sT">--</div></div>
+  <div class="card stat"><h3>Suhu min / maks</h3><div class="v" id="rT">--</div><div class="sub" id="mdT">--</div></div>
+  <div class="card stat h"><h3>Kelembapan rata-rata</h3><div class="v" id="mH">--</div><div class="sub" id="sH">--</div></div>
+  <div class="card stat h"><h3>Kelembapan min / maks</h3><div class="v" id="rH">--</div><div class="sub" id="mdH">--</div></div>
+  <div class="card stat r"><h3>Korelasi Pearson (r)</h3><div class="v" id="cr">--</div><div class="sub" id="crt">--</div></div>
+  <div class="card stat r"><h3>Data terbaru</h3><div class="v" id="last">--</div><div class="sub" id="lastw">--</div></div>
+  <div class="card stat g"><h3>Kelembaban tanah rata-rata</h3><div class="v" id="mS">--</div><div class="sub" id="sS">--</div></div>
+  <div class="card stat g"><h3>Tanah min / maks</h3><div class="v" id="rS">--</div><div class="sub" id="mdS">--</div></div>
+  <div class="card stat y"><h3>Status cahaya terakhir</h3><div class="v" id="ch">--</div><div class="sub" id="chp">--</div></div>
+</div>
+
+<div class="card" id="w-line"><h2>Tren Sensor <span class="sub" id="maTxt"></span> <button id="rz" style="float:right;font-size:.75rem">Reset Zoom</button></h2><div class="sub" style="margin-bottom:6px">Scroll/pinch = zoom, geser = pan, klik titik = detail, klik legenda = tampil/sembunyi.</div><div class="cv big"><canvas id="cLine"></canvas></div></div>
+
+<div class="card" id="w-detail"><h2>Detail Titik Terpilih</h2><div id="detail" class="sub" style="font-size:.9rem">Klik titik pada grafik tren/scatter atau baris tabel.</div></div>
+<div class="two">
+  <div class="card" id="w-hT"><h2>Histogram Distribusi Suhu</h2><div class="cv"><canvas id="cHT"></canvas></div></div>
+  <div class="card" id="w-hH"><h2>Histogram Distribusi Kelembapan</h2><div class="cv"><canvas id="cHH"></canvas></div></div>
+  <div class="card" id="w-sc"><h2>Scatter Suhu vs Kelembapan</h2><div class="cv"><canvas id="cSc"></canvas></div></div>
+  <div class="card" id="w-bar"><h2>Rata-rata per Jam</h2><div class="cv"><canvas id="cBar"></canvas></div></div>
+  <div class="card" id="w-hS"><h2>Histogram Kelembaban Tanah</h2><div class="cv"><canvas id="cHS"></canvas></div></div>
+  <div class="card" id="w-ch"><h2>Proporsi Cahaya (Ada / Tidak Ada)</h2><div class="cv"><canvas id="cCh"></canvas></div></div>
+  <div class="card" id="w-lt"><h2>Riwayat Status Cahaya</h2><div class="cv"><canvas id="cLt"></canvas></div></div>
+</div>
+
+<div class="card" id="w-flow"><h2>Diagram Alur Sistem</h2>
+  <div class="flow">
+    <div class="node"><b>Sensor</b>AHT10, LDR, soil moisture</div><span class="arrow">→</span>
+    <div class="node"><b>ESP32</b>WiFi, HTTP GET (query string)</div><span class="arrow">→</span>
+    <div class="node"><b>Apps Script</b>Web App API (doGet)</div><span class="arrow">→</span>
+    <div class="node"><b>Google Sheets</b>database</div><span class="arrow">→</span>
+    <div class="node"><b>Dashboard Netlify</b>fetch + Chart.js + statistik</div>
+  </div>
+</div>
+
+<div class="card" id="w-tbl"><h2>Data Mentah <span class="sub" id="tcount"></span></h2>
+<input id="q" placeholder="Cari di tabel..." style="width:100%;margin-bottom:8px;padding:6px 10px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx)">
+<div class="tw"><table id="tbl"><thead><tr><th data-k="i">Waktu</th><th data-k="suhu">Suhu (°C)</th><th data-k="hum">Kelembaban udara (%)</th><th data-k="cahaya">Cahaya</th><th data-k="tanah">Tanah (%)</th></tr></thead><tbody id="tb"></tbody></table></div></div>
+</div>
+
+<aside class="drawer" id="dr">
+<h2>⚙ Menu Dasbor <button id="drx" style="float:right">✕</button></h2>
+<fieldset><legend>Data</legend>
+<label>Refresh otomatis <select id="oRef"><option value="5000">5 dtk</option><option value="10000">10 dtk</option><option value="30000">30 dtk</option><option value="60000">1 mnt</option><option value="0">Mati</option></select></label>
+<label>Rentang jam <span><input type="number" id="oH1" min="0" max="23"> – <input type="number" id="oH2" min="0" max="23"></span></label>
+<label>Filter cahaya <select id="oCh"><option value="">Semua</option><option>Ada</option><option>Tidak Ada</option></select></label>
+</fieldset>
+<fieldset><legend>Grafik</legend>
+<label>Moving average <input type="number" id="oMA" min="2" max="20"></label>
+<label>Bin histogram <input type="number" id="oBin" min="3" max="20"></label>
+<label>Kehalusan garis <input type="range" id="oTn" min="0" max="0.5" step="0.1"></label>
+<label>Tampilkan titik <input type="checkbox" id="oPt"></label>
+</fieldset>
+<fieldset><legend>Seri grafik tren</legend>
+<label>Suhu <input type="checkbox" data-s="0"></label><label>Kelembapan <input type="checkbox" data-s="1"></label>
+<label>MA Suhu <input type="checkbox" data-s="2"></label><label>MA Kelembapan <input type="checkbox" data-s="3"></label>
+<label>Kelembaban Tanah <input type="checkbox" data-s="4"></label>
+</fieldset>
+<fieldset><legend>Tampilkan widget</legend>
+<label>Kartu statistik <input type="checkbox" data-w="w-stat"></label><label>Tren sensor <input type="checkbox" data-w="w-line"></label>
+<label>Detail titik <input type="checkbox" data-w="w-detail"></label><label>Histogram suhu <input type="checkbox" data-w="w-hT"></label>
+<label>Histogram kelembapan <input type="checkbox" data-w="w-hH"></label><label>Scatter <input type="checkbox" data-w="w-sc"></label>
+<label>Rata-rata per jam <input type="checkbox" data-w="w-bar"></label><label>Histogram tanah <input type="checkbox" data-w="w-hS"></label>
+<label>Proporsi cahaya <input type="checkbox" data-w="w-ch"></label><label>Riwayat cahaya <input type="checkbox" data-w="w-lt"></label>
+<label>Diagram alur <input type="checkbox" data-w="w-flow"></label><label>Tabel data <input type="checkbox" data-w="w-tbl"></label>
+</fieldset>
+<button id="oReset">Reset pengaturan</button>
+</aside>
+<script>
+// GANTI dengan URL Web App Apps Script Anda
+const SCRIPT_URL="https://script.google.com/macros/s/AKfycbzyTFcfVhAUW47NrfqUjXPTcU-2JWC9qwipoieBtN-PeTjQYci69XfWK2HDGnBaXK1JOQ/exec";
+// URL Firebase Realtime Database (tanpa "/" di akhir), contoh: "https://xxx-default-rtdb.asia-southeast1.firebasedatabase.app"
+const FB_URL="";
+const DEF={ref:10000,h1:0,h2:23,ch:'',ma:5,bins:8,tn:.3,pt:true,n:50,s:[true,true,true,true,true],w:{}};
+let cfg;
+try{cfg=Object.assign({},DEF,JSON.parse(localStorage.getItem('iotcfg')||'{}'))}catch(e){cfg=JSON.parse(JSON.stringify(DEF))}
+const save=()=>{try{localStorage.setItem('iotcfg',JSON.stringify(cfg))}catch(e){}};
+let rows=[],base=[],view=[],ST=null,selI=null,paused=false,timer,srt={k:'i',d:-1};
+const css=getComputedStyle(document.documentElement);
+const mk=(id,type,datasets,opt={})=>new Chart(document.getElementById(id),{type,data:{labels:[],datasets},options:Object.assign({responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false}},opt)});
+const ds=(l,c,extra={})=>Object.assign({label:l,data:[],borderColor:c,backgroundColor:c+'33',borderWidth:2,pointRadius:2,tension:.3},extra);
+
+const cLine=mk('cLine','line',[ds('Suhu (°C)','#ef4444',{fill:true,yAxisID:'y'}),ds('Kelembapan (%)','#3b82f6',{fill:true,yAxisID:'y1'}),
+  ds('MA Suhu','#b91c1c',{borderDash:[5,4],pointRadius:0}),ds('MA Kelembapan','#1d4ed8',{borderDash:[5,4],pointRadius:0,yAxisID:'y1'}),ds('Kelembaban Tanah (%)','#22c55e',{yAxisID:'y1'})],
+  {scales:{y:{position:'left',title:{display:true,text:'°C'}},y1:{position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'%'}}},
+   onClick:(e,els)=>{if(els.length)showDetail(view[els[0].index])},
+   plugins:{legend:{onClick:(e,it)=>{cfg.s[it.datasetIndex]=!cfg.s[it.datasetIndex];commit()}},
+     zoom:{pan:{enabled:true,mode:'x'},zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'x'}}}});
+const cHT=mk('cHT','bar',[{label:'Frekuensi',data:[],backgroundColor:'#ef4444'}]);
+const cHH=mk('cHH','bar',[{label:'Frekuensi',data:[],backgroundColor:'#3b82f6'}]);
+const cSc=mk('cSc','scatter',[{label:'Sampel',data:[],backgroundColor:'#8b5cf6'}],
+  {scales:{x:{title:{display:true,text:'Suhu (°C)'}},y:{title:{display:true,text:'Kelembapan (%)'}}},interaction:{mode:'nearest'},onClick:(e,els)=>{if(els.length)showDetail(view[els[0].index])}});
+const cBar=mk('cBar','bar',[{label:'Suhu',data:[],backgroundColor:'#ef4444'},{label:'Kelembapan',data:[],backgroundColor:'#3b82f6'},{label:'Tanah',data:[],backgroundColor:'#22c55e'}]);
+
+const cHS=mk('cHS','bar',[{label:'Frekuensi',data:[],backgroundColor:'#22c55e'}]);
+const cCh=mk('cCh','doughnut',[{data:[0,0],backgroundColor:['#eab308','#475569']}],{onClick:(e,els)=>{if(!els.length)return;const l=['Ada','Tidak Ada'][els[0].index];cfg.ch=cfg.ch===l?'':l;commit()}});
+const cLt=mk('cLt','line',[ds('Cahaya','#eab308',{stepped:true,fill:true,pointRadius:0})],{scales:{y:{min:0,max:1,ticks:{stepSize:1,callback:v=>v===1?'Ada':v===0?'Tidak Ada':''}}}});
+
+const jamOf=w=>{const m=String(w).match(/(\d{1,2})[.:]\d{2}[.:]?\d*\s*$/);return m?+m[1]:0};
+let liveRows=[];
+function reindex(){rows.forEach((r,i)=>{r.i=i;r.jam=jamOf(r.waktu)})}
+function mergeLive(){
+  const lt=rows.length?rows[rows.length-1].ts||0:0;
+  liveRows=liveRows.filter(x=>x.ts>lt).slice(-200);
+  rows=rows.concat(liveRows);reindex();
+}
+function fmtWaktu(ts){const d=new Date(ts),p=n=>String(n).padStart(2,'0');
+  return p(d.getDate())+'/'+p(d.getMonth()+1)+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())}
+function setLive(t,bg,fg){const e=document.getElementById('live');e.innerText=t;e.style.background=bg;e.style.color=fg}
+function pushLive(d){
+  if(!d||d.suhu===undefined)return;
+  const ts=+d.ts||Date.now();
+  if(rows.length&&rows[rows.length-1].ts===ts)return;
+  const r={waktu:fmtWaktu(ts),ts,suhu:+d.suhu,hum:+d.kelembaban_udara,cahaya:String(d.cahaya||'').trim(),tanah:+d.tanah_persen,tanahRaw:+d.kelembaban_tanah};
+  if(isNaN(r.suhu)||isNaN(r.hum))return;
+  liveRows.push(r);rows.push(r);
+  while(rows.length>cfg.n)rows.shift();
+  reindex();
+  setLive('● Live • '+new Date(ts).toLocaleTimeString('id-ID'),'#dcfce7','#166534');
+  if(!paused)render();
+}
+function liveStart(){
+  if(!FB_URL)return;
+  const es=new EventSource(FB_URL+'/live.json');
+  const h=e=>{try{const m=JSON.parse(e.data);if(m&&m.path==='/')pushLive(m.data)}catch(x){}};
+  es.addEventListener('put',h);es.addEventListener('patch',h);
+  es.onopen=()=>setLive('Live: tersambung','#e0f2fe','#0369a1');
+  es.onerror=()=>setLive('Live: terputus, mencoba lagi...','#fee2e2','#991b1b');
+}
+const mean=a=>a.reduce((s,v)=>s+v,0)/a.length;
+function stat(a){
+  const n=a.length,m=mean(a),s=[...a].sort((x,y)=>x-y);
+  const med=n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2;
+  const sd=n>1?Math.sqrt(a.reduce((q,v)=>q+(v-m)**2,0)/(n-1)):0;
+  return{n,m,med,sd,min:s[0],max:s[n-1]};
+}
+function pearson(x,y){
+  const mx=mean(x),my=mean(y);let nu=0,dx=0,dy=0;
+  for(let i=0;i<x.length;i++){nu+=(x[i]-mx)*(y[i]-my);dx+=(x[i]-mx)**2;dy+=(y[i]-my)**2}
+  return dx&&dy?nu/Math.sqrt(dx*dy):0;
+}
+function ma(a,w=5){return a.map((_,i)=>mean(a.slice(Math.max(0,i-w+1),i+1)))}
+function hist(a,bins=8){
+  const mn=Math.min(...a),mx=Math.max(...a),st=(mx-mn)/bins||1,c=Array(bins).fill(0);
+  a.forEach(v=>c[Math.min(bins-1,Math.floor((v-mn)/st))]++);
+  return{labels:c.map((_,i)=>(mn+i*st).toFixed(1)+'–'+(mn+(i+1)*st).toFixed(1)),data:c};
+}
+function korLabel(r){const a=Math.abs(r);return (a>=.7?'kuat':a>=.4?'sedang':a>=.2?'lemah':'sangat lemah')+(r<0?' (negatif)':' (positif)')}
+
+function applyFilter(){
+  const{h1,h2}=cfg;
+  base=rows.filter(x=>h1<=h2?(x.jam>=h1&&x.jam<=h2):(x.jam>=h1||x.jam<=h2));
+  view=cfg.ch?base.filter(x=>x.cahaya===cfg.ch):base;
+}
+function render(){
+  applyFilter();
+  const set=(i,v)=>document.getElementById(i).innerText=v;
+  if(!view.length){set('chp','Tidak ada data sesuai filter');renderTable();return}
+  const T=view.map(r=>r.suhu),H=view.map(r=>r.hum),W=view.map(r=>r.waktu);
+  const S=view.map(r=>r.tanah).filter(v=>!isNaN(v));
+  const a=stat(T),b=stat(H),r=pearson(T,H);ST=a;
+  set('mT',a.m.toFixed(1)+' °C');set('sT','Std Dev: ±'+a.sd.toFixed(2));
+  set('rT',a.min.toFixed(1)+' / '+a.max.toFixed(1));set('mdT','Median: '+a.med.toFixed(1)+' °C');
+  set('mH',b.m.toFixed(1)+' %');set('sH','Std Dev: ±'+b.sd.toFixed(2));
+  set('rH',b.min.toFixed(1)+' / '+b.max.toFixed(1));set('mdH','Median: '+b.med.toFixed(1)+' %');
+  set('cr',r.toFixed(3));set('crt','Korelasi '+korLabel(r)+', n='+a.n);
+  const L=view[view.length-1];
+  set('last',L.suhu.toFixed(1)+'° / '+L.hum.toFixed(0)+'%');set('lastw',L.waktu);
+  if(S.length){const c=stat(S);
+    set('mS',c.m.toFixed(1)+' %');set('sS','Std Dev: ±'+c.sd.toFixed(2));
+    set('rS',c.min.toFixed(0)+' / '+c.max.toFixed(0)+' %');set('mdS','Median: '+c.med.toFixed(1)+' %');}
+  const ada=base.filter(x=>x.cahaya==='Ada').length;
+  set('ch',L.cahaya||'--');
+  set('chp','Ada: '+(base.length?ada/base.length*100:0).toFixed(0)+'% dari '+base.length+' data'+(cfg.ch?' • filter: '+cfg.ch:''));
+
+  cLine.data.labels=W;
+  [T,H,ma(T,cfg.ma),ma(H,cfg.ma),view.map(x=>isNaN(x.tanah)?null:x.tanah)].forEach((d,i)=>cLine.data.datasets[i].data=d);cLine.update();
+  const ht=hist(T,cfg.bins),hh=hist(H,cfg.bins);
+  cHT.data.labels=ht.labels;cHT.data.datasets[0].data=ht.data;cHT.update();
+  cHH.data.labels=hh.labels;cHH.data.datasets[0].data=hh.data;cHH.update();
+  if(S.length){const hs=hist(S,cfg.bins);cHS.data.labels=hs.labels;cHS.data.datasets[0].data=hs.data;cHS.update();}
+  cSc.data.datasets[0].data=T.map((t,i)=>({x:t,y:H[i]}));cSc.update();
+  cCh.data.labels=['Ada','Tidak Ada'];cCh.data.datasets[0].data=[ada,base.length-ada];cCh.update();
+  cLt.data.labels=W;cLt.data.datasets[0].data=view.map(x=>x.cahaya==='Ada'?1:0);cLt.update();
+
+  const g={};
+  view.forEach(x=>{const k=String(x.jam).padStart(2,'0')+':00';(g[k]=g[k]||[]).push(x)});
+  const ks=Object.keys(g).sort();
+  const avgS=k=>{const v=g[k].map(x=>x.tanah).filter(q=>!isNaN(q));return v.length?mean(v):null};
+  cBar.data.labels=ks;
+  cBar.data.datasets[0].data=ks.map(k=>mean(g[k].map(x=>x.suhu)));
+  cBar.data.datasets[1].data=ks.map(k=>mean(g[k].map(x=>x.hum)));
+  cBar.data.datasets[2].data=ks.map(avgS);cBar.update();
+  renderTable();
+}
+function renderTable(){
+  const q=document.getElementById('q').value.toLowerCase(),{k,d:dir}=srt;
+  let d=view.filter(x=>!q||[x.waktu,x.suhu,x.hum,x.cahaya,x.tanah].join(' ').toLowerCase().includes(q));
+  d=[...d].sort((a,b)=>{const u=a[k],v=b[k];return(typeof u==='string'?u.localeCompare(v):(u-v))*dir});
+  document.getElementById('tcount').innerText='('+d.length+' baris, klik header untuk urut)';
+  document.getElementById('tb').innerHTML=d.slice(0,300).map(x=>`<tr data-i="${x.i}" class="${x.i===selI?'sel':''}"><td>${x.waktu}</td><td>${x.suhu.toFixed(1)}</td><td>${x.hum.toFixed(1)}</td><td>${x.cahaya||'-'}</td><td>${isNaN(x.tanah)?'-':x.tanah.toFixed(0)}</td></tr>`).join('');
+}
+function showDetail(x){
+  if(!x)return;selI=x.i;
+  const z=ST&&ST.sd?(x.suhu-ST.m)/ST.sd:0;
+  document.getElementById('detail').innerHTML=`<b>${x.waktu}</b> • Suhu <b>${x.suhu.toFixed(1)} °C</b> (z=${z.toFixed(2)}${Math.abs(z)>2?', outlier':''}) • Kelembaban udara <b>${x.hum.toFixed(1)} %</b> • Cahaya <b>${x.cahaya||'-'}</b> • Tanah <b>${isNaN(x.tanah)?'-':x.tanah+' %'}</b> (ADC ${isNaN(x.tanahRaw)?'-':x.tanahRaw})`;
+  const k=view.indexOf(x);
+  if(k>=0){cLine.setActiveElements([{datasetIndex:0,index:k}]);cLine.update()}
+  renderTable();
+}
+function syncUI(){
+  const g=id=>document.getElementById(id);
+  g('oRef').value=cfg.ref;g('oH1').value=cfg.h1;g('oH2').value=cfg.h2;g('oCh').value=cfg.ch;
+  g('oMA').value=cfg.ma;g('oBin').value=cfg.bins;g('oTn').value=cfg.tn;g('oPt').checked=cfg.pt;g('n').value=cfg.n;
+  document.querySelectorAll('[data-s]').forEach(c=>c.checked=!!cfg.s[+c.dataset.s]);
+  document.querySelectorAll('[data-w]').forEach(c=>c.checked=cfg.w[c.dataset.w]!==false);
+}
+function setTimer(){clearInterval(timer);if(cfg.ref&&!paused)timer=setInterval(muat,cfg.ref)}
+function applyCfg(){
+  syncUI();
+  cLine.data.datasets.forEach((d,i)=>{d.hidden=!cfg.s[i];d.tension=cfg.tn;if([0,1,4].includes(i))d.pointRadius=cfg.pt?2:0});
+  cLine.update();
+  document.querySelectorAll('[data-w]').forEach(c=>document.getElementById(c.dataset.w).classList.toggle('hide',cfg.w[c.dataset.w]===false));
+  document.getElementById('maTxt').innerText='(MA '+cfg.ma+')';
+  setTimer();
+}
+function commit(){save();applyCfg();if(rows.length)render()}
+function bindUI(){
+  const g=id=>document.getElementById(id);
+  g('menuBtn').onclick=()=>g('dr').classList.toggle('open');
+  g('drx').onclick=()=>g('dr').classList.remove('open');
+  g('pause').onclick=()=>{paused=!paused;g('pause').innerText=paused?'▶ Lanjut':'⏸ Jeda';setTimer()};
+  g('rz').onclick=()=>cLine.resetZoom();
+  g('q').oninput=renderTable;
+  [['oMA','ma'],['oBin','bins'],['oH1','h1'],['oH2','h2'],['oTn','tn']].forEach(([id,k])=>g(id).onchange=()=>{cfg[k]=+g(id).value;commit()});
+  g('oRef').onchange=()=>{cfg.ref=+g('oRef').value;commit()};
+  g('oCh').onchange=()=>{cfg.ch=g('oCh').value;commit()};
+  g('oPt').onchange=()=>{cfg.pt=g('oPt').checked;commit()};
+  g('n').onchange=()=>{cfg.n=+g('n').value;save();muat()};
+  document.querySelectorAll('[data-s]').forEach(c=>c.onchange=()=>{cfg.s[+c.dataset.s]=c.checked;commit()});
+  document.querySelectorAll('[data-w]').forEach(c=>c.onchange=()=>{cfg.w[c.dataset.w]=c.checked;commit()});
+  g('oReset').onclick=()=>{cfg=JSON.parse(JSON.stringify(DEF));commit()};
+  g('tbl').querySelector('thead').onclick=e=>{const th=e.target.closest('th');if(!th)return;const k=th.dataset.k;srt=srt.k===k?{k,d:-srt.d}:{k,d:1};renderTable()};
+  g('tb').onclick=e=>{const tr=e.target.closest('tr');if(tr)showDetail(view.find(x=>x.i==tr.dataset.i))};
+}
+
+async function muat(){
+  const el=document.getElementById('st'),n=document.getElementById('n').value;
+  try{
+    const res=await fetch(SCRIPT_URL+'?n='+n);
+    const d=await res.json();
+    if(!Array.isArray(d)||!d.length){el.innerText='Spreadsheet masih kosong';return}
+    rows=d.map(x=>({waktu:String(x.waktu),ts:+x.ts||0,suhu:parseFloat(x.suhu),hum:parseFloat(x.kelembaban_udara??x.kelembapan),cahaya:String(x.cahaya||'').trim(),tanah:parseFloat(x.tanah_persen),tanahRaw:parseFloat(x.kelembaban_tanah)})).filter(x=>!isNaN(x.suhu)&&!isNaN(x.hum));mergeLive();
+    render();
+    el.innerText='Aktif • '+new Date().toLocaleTimeString('id-ID');el.style.background='#dcfce7';el.style.color='#166534';
+  }catch(e){el.innerText='Gagal memuat data';el.style.background='#fee2e2';el.style.color='#991b1b';console.error(e)}
+}
+document.getElementById('csv').onclick=()=>{
+  const t='waktu,suhu,kelembaban_udara,cahaya,tanah_persen,tanah_raw\n'+view.map(r=>`"${r.waktu}",${r.suhu},${r.hum},${r.cahaya},${r.tanah},${r.tanahRaw}`).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/csv'}));a.download='data-sensor.csv';a.click();
+};
+bindUI();applyCfg();muat();liveStart();
+</script>
+</body>
+</html>
